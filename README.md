@@ -24,6 +24,28 @@
 
 ---
 
+## Project Goal / 项目目标
+
+The end goal is to let a **BL-unlocked Consumer** pass Google Play Integrity
+STRONG_INTEGRITY by leveraging a **BL-locked Provider**'s real TEE.
+
+Path so far:
+
+1. **v1.0** (released): forward the attestation chain. Passes local
+   verifiers but not Play Integrity.
+2. **v2.0** (in design): forward the entire keystore session. Targets Play
+   Integrity. See [protocol-v2-rfc.md](OmegaRelay/docs/protocol-v2-rfc.md).
+
+最终目标：利用 **BL 锁定** 的 Provider 真实 TEE，让 **BL 解锁** 的 Consumer 通过
+Google Play Integrity STRONG_INTEGRITY。
+
+路线：
+1. **v1.0**（已发布）：转发证书链。通过本地验证器但无法过 Play Integrity。
+2. **v2.0**（设计中）：转发整个 keystore 会话。目标是 Play Integrity。
+   详见 [protocol-v2-rfc.md](OmegaRelay/docs/protocol-v2-rfc.md)。
+
+---
+
 ## Components / 组件
 
 | Directory | Description |
@@ -55,9 +77,25 @@ sudo OMEGA_PSK="your-secret-key" OMEGA_NO_TLS=1 bash OmegaRelay/vps/install.sh
 
 ### 2. Setup Provider (Device B) / 配置 Provider（设备 B）
 
-Download `OmegaRelay-Provider-v1.0.0.apk` from [Releases](https://github.com/Andrea-lyz/TEESimulator-RS-Online/releases) and install on a **BL-locked** device.
+Download `OmegaRelay-Provider-v1.0.0-signed.apk` from [Releases](https://github.com/Andrea-lyz/TEESimulator-RS-Online/releases) and install on a **BL-locked** device.
 
-从 [Releases](https://github.com/Andrea-lyz/TEESimulator-RS-Online/releases) 下载 `OmegaRelay-Provider-v1.0.0.apk`，安装到 **BL 锁定**的设备上。
+Provider device requirements / Provider 设备要求：
+
+- **For v1.0 (current)**: BL-locked + valid TEE + valid keybox available.
+- **For v2.0 (in design, targets Play Integrity)**: BL-locked + RKP support
+  (Android 12+) + KSU jailbreak mode (Magica + SELinux permissive trick) so
+  the device retains root while TEE still reports `verifiedBootState=Verified`.
+  See [Holy Grail thread on XDA](https://xdaforums.com/t/the-holy-grail-universal-no-bl-root-for-qualcomm-devices-bypass-locked-bootloaders.4782827/) for the jailbreak procedure.
+
+从 [Releases](https://github.com/Andrea-lyz/TEESimulator-RS-Online/releases) 下载 `OmegaRelay-Provider-v1.0.0-signed.apk`，安装到 **BL 锁定**的设备上。
+
+Provider 设备要求：
+
+- **v1.0（当前）**：BL 锁定 + 有效 TEE + 可用 keybox。
+- **v2.0（设计中，目标 Play Integrity）**：BL 锁定 + RKP 支持（Android 12+） +
+  KSU 越狱模式（Magica + SELinux 宽容模式技巧），设备保持 root 的同时 TEE 仍
+  报告 `verifiedBootState=Verified`。越狱流程参考
+  [XDA Holy Grail 帖](https://xdaforums.com/t/the-holy-grail-universal-no-bl-root-for-qualcomm-devices-bypass-locked-bootloaders.4782827/)。
 
 Open the app and configure:
 - URL: `ws://your-vps-ip:8443/` or `wss://relay.example.com:8443/`
@@ -279,11 +317,45 @@ See [OmegaRelay/docs/protocol.md](OmegaRelay/docs/protocol.md) for the full prot
 
 ## Limitations / 限制
 
-- **Cannot pass Play Integrity**: Google's backend cross-references device identity through side-channels (GMS login, device registration) that detect the mismatch between Device A's real identity and Device B's attestation. This is a structural limitation.
-- **Can pass**: vvb2060 KeyAttestation, Duck Detector (Tamper score ≤ 8), apps that only verify the X.509 chain locally.
+### v1.0 (current release / 当前发布版本)
 
-- **无法通过 Play Integrity**：Google 后端通过侧信道（GMS 登录、设备注册）交叉验证设备身份，能检测到设备 A 真实身份与设备 B attestation 的不匹配。这是架构性限制。
-- **可以通过**：vvb2060 KeyAttestation、Duck Detector（Tamper score ≤ 8）、仅本地验证 X.509 链的应用。
+**v1.0 cannot pass Google Play Integrity**. The bottleneck is not the
+attestation chain — Provider B's chain is real and rooted at Google. The
+problem is that GMS DroidGuard performs **multiple keystore operations** on
+the same alias (generateKey → sign → sign → ...), but the private key in
+v1.0 lives only on Provider B. Consumer A cannot satisfy the subsequent
+`sign` calls.
+
+v1.0 **does** pass: vvb2060 KeyAttestation, Duck Detector (Tamper score ≤ 8),
+and any local X.509 chain verification.
+
+**v1.0 无法通过 Google Play Integrity**。瓶颈不在证书链——Provider B 签出来的链
+是真实的、根证书是 Google 的。问题在于 GMS DroidGuard 会对同一个 alias 执行**多
+次 keystore 操作**（generateKey → sign → sign → ...），而 v1.0 中私钥只存在于
+Provider B 上，Consumer A 无法响应后续的 `sign` 调用。
+
+v1.0 **能通过**：vvb2060 KeyAttestation、Duck Detector（Tamper score ≤ 8）、
+以及任何本地 X.509 链验证。
+
+### v2.0 (in design / 设计中)
+
+v2.0 is being designed to forward the **entire keystore session** (not just
+the attestation step). This means every `sign` operation on Consumer A is
+routed through the relay to Provider B's TEE, with the private key never
+leaving B. Combined with KSU jailbreak mode on Provider B (real
+`verifiedBootState=Verified`), this should allow Consumer A to pass Play
+Integrity STRONG_INTEGRITY.
+
+See [protocol-v2-rfc.md](OmegaRelay/docs/protocol-v2-rfc.md) for the full
+design draft.
+
+v2.0 正在设计中，目标是转发**整个 keystore 会话**（不只是 attestation 步骤）。
+Consumer A 上的每次 `sign` 操作都会通过中继路由到 Provider B 的 TEE，私钥从不
+离开 B。配合 Provider B 上的 KSU 越狱模式（真实的
+`verifiedBootState=Verified`），理论上可以让 Consumer A 通过 Play Integrity
+STRONG_INTEGRITY。
+
+完整设计详见 [protocol-v2-rfc.md](OmegaRelay/docs/protocol-v2-rfc.md)。
 
 ---
 
