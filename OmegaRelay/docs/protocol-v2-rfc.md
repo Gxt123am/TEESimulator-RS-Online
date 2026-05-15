@@ -7,6 +7,8 @@
 > TEE legitimately reports `verifiedBootState=Verified` (achieved via KSU
 > jailbreak mode + Magica + properly hidden environment).
 
+> 中文版本：[protocol-v2-rfc.zh.md](./protocol-v2-rfc.zh.md)
+
 ---
 
 ## 1. Background

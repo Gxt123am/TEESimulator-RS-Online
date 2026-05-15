@@ -42,7 +42,7 @@ Google Play Integrity STRONG_INTEGRITY。
 路线：
 1. **v1.0**（已发布）：转发证书链。通过本地验证器但无法过 Play Integrity。
 2. **v2.0**（设计中）：转发整个 keystore 会话。目标是 Play Integrity。
-   详见 [protocol-v2-rfc.md](OmegaRelay/docs/protocol-v2-rfc.md)。
+   详见 [protocol-v2-rfc.zh.md](OmegaRelay/docs/protocol-v2-rfc.zh.md)。
 
 ---
 
@@ -355,7 +355,7 @@ Consumer A 上的每次 `sign` 操作都会通过中继路由到 Provider B 的 
 `verifiedBootState=Verified`），理论上可以让 Consumer A 通过 Play Integrity
 STRONG_INTEGRITY。
 
-完整设计详见 [protocol-v2-rfc.md](OmegaRelay/docs/protocol-v2-rfc.md)。
+完整设计详见 [protocol-v2-rfc.zh.md](OmegaRelay/docs/protocol-v2-rfc.zh.md)。
 
 ---
 
