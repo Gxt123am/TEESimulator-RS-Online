@@ -93,7 +93,12 @@ psk = your-secret-key
 device_id = device-a-1
 ```
 
-重启后编辑中继配置文件，填入你的 VPS 地址、PSK 和设备 ID。
+Reboot again for the config to take effect:
+```bash
+adb reboot
+```
+
+重启后编辑中继配置文件，填入你的 VPS 地址、PSK 和设备 ID。**修改配置后需要再次重启**才能生效。
 
 ### 4. Verify / 验证
 
@@ -106,6 +111,112 @@ Check relay logs on Device A:
 ```bash
 adb logcat -s TEESimulator:V | grep -i relay
 ```
+
+---
+
+## Debugging & Troubleshooting / 调试与排障
+
+### View Consumer logs / 查看 Consumer 日志
+
+```bash
+# All TEESimulator logs (verbose)
+adb logcat -s TEESimulator:V
+
+# Only relay-related logs
+adb logcat -s TEESimulator:V | grep -iE "relay|RELAY|task|chain"
+
+# Clear logcat and start fresh
+adb logcat -c && adb logcat -s TEESimulator:V
+```
+
+### View Provider logs / 查看 Provider 日志
+
+```bash
+# Provider APK logs
+adb logcat -s OmegaRelay:V
+
+# Or filter by package
+adb logcat --pid=$(adb shell pidof org.ommega.relay.provider.app)
+```
+
+### View VPS server logs / 查看 VPS 服务器日志
+
+```bash
+# Live logs
+journalctl -u omega-relay -f
+
+# Last 100 lines
+journalctl -u omega-relay -n 100 --no-pager
+
+# Restart server
+sudo systemctl restart omega-relay
+```
+
+### Force reconnect relay (Consumer) / 强制重连中继（Consumer 端）
+
+The relay client lives inside the `keystore2` process. To force reconnect:
+
+中继客户端运行在 `keystore2` 进程内。强制重连方法：
+
+```bash
+# Method 1: Kill keystore2 (system will auto-restart it, module re-injects)
+adb shell "su -c 'killall keystore2'"
+
+# Method 2: Full reboot (most reliable)
+adb reboot
+```
+
+### Force reconnect relay (Provider) / 强制重连中继（Provider 端）
+
+```bash
+# Restart the Provider app service
+adb shell "su -c 'am force-stop org.ommega.relay.provider.app'"
+# Then reopen the app, or it will auto-restart via BootReceiver on next boot
+```
+
+### Check relay connection status / 检查中继连接状态
+
+```bash
+# Consumer side: look for "authenticated" or "connected"
+adb logcat -d -s TEESimulator:V | grep -iE "authenticated|connected|disconnect"
+
+# Provider side:
+adb logcat -d -s OmegaRelay:V | grep -iE "authenticated|connected|disconnect"
+
+# VPS side: check active connections
+journalctl -u omega-relay --since "5 min ago" | grep -i "hello\|disconnect"
+```
+
+### Test attestation manually / 手动测试 attestation
+
+```bash
+# Trigger a key attestation and watch the relay in action
+adb logcat -c
+# Open Key Attestation app on Device A, tap "Attest"
+adb logcat -s TEESimulator:V | grep -iE "relay|task|chain|OK"
+```
+
+Expected output / 期望输出:
+```
+RelayEngine: task <uuid> OK in <N>ms, chain len=6
+RELAY: installed remote chain (len=6) over placeholder for <alias>
+```
+
+### Common issues / 常见问题
+
+| Symptom / 现象 | Cause / 原因 | Fix / 解决 |
+|---|---|---|
+| `RelayEngine: connect failed` | Wrong URL/PSK or server down | Check config, `curl ws://ip:8443/` from PC |
+| `RelayEngine: task timeout` | Provider offline or sleeping | Wake Device B, check Provider app is running |
+| `RELAY: no provider available` | Provider not connected to server | Check Provider logs, restart Provider app |
+| `chain len=0` | Provider TEE refused to sign | Check Device B is BL-locked, keybox present |
+| No relay logs at all | Config not loaded | Verify `omega-relay.conf` exists and reboot |
+
+| 无任何 relay 日志 | 配置未加载 | 确认 `omega-relay.conf` 存在并重启 |
+| 连接失败 | URL/PSK 错误或服务器宕机 | 检查配置，从电脑 `curl ws://ip:8443/` 测试 |
+| 任务超时 | Provider 离线或休眠 | 唤醒设备 B，确认 Provider 应用在运行 |
+| 无 Provider 可用 | Provider 未连接服务器 | 检查 Provider 日志，重启 Provider 应用 |
+| chain len=0 | Provider TEE 拒绝签名 | 确认设备 B BL 锁定，keybox 存在 |
 
 ---
 
