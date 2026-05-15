@@ -55,32 +55,57 @@ sudo OMEGA_PSK="your-secret-key" OMEGA_NO_TLS=1 bash OmegaRelay/vps/install.sh
 
 ### 2. Setup Provider (Device B) / 配置 Provider（设备 B）
 
-Install the Provider APK on a **BL-locked** device. Configure:
-- URL: `wss://relay.example.com:8443/`
+Download `OmegaRelay-Provider-v1.0.0.apk` from [Releases](https://github.com/Andrea-lyz/TEESimulator-RS-Online/releases) and install on a **BL-locked** device.
+
+从 [Releases](https://github.com/Andrea-lyz/TEESimulator-RS-Online/releases) 下载 `OmegaRelay-Provider-v1.0.0.apk`，安装到 **BL 锁定**的设备上。
+
+Open the app and configure:
+- URL: `ws://your-vps-ip:8443/` or `wss://relay.example.com:8443/`
 - PSK: (same as server)
 - Device ID: `device-b-1`
 
-在 **BL 锁定**的设备上安装 Provider APK，配置中继地址、PSK 和设备 ID。
+The app supports both `ws://` (cleartext) and `wss://` (TLS) to any address — no IP whitelist needed.
+
+应用支持 `ws://`（明文）和 `wss://`（TLS）连接任意地址，无需 IP 白名单。
 
 ### 3. Setup Consumer (Device A) / 配置 Consumer（设备 A）
 
-Flash the module ZIP on Device A (BL unlocked, KSU/Magisk/APatch).
+Download `TEESimulator-RS-v6.0.0-165-Release.zip` from [Releases](https://github.com/Andrea-lyz/TEESimulator-RS-Online/releases).
 
-Edit `/data/adb/modules/tricky_store/omega-relay.conf`:
+从 [Releases](https://github.com/Andrea-lyz/TEESimulator-RS-Online/releases) 下载 `TEESimulator-RS-v6.0.0-165-Release.zip`。
+
+Flash via KSU/Magisk/APatch on Device A (BL unlocked):
+```bash
+# KSU example:
+adb push TEESimulator-RS-v6.0.0-165-Release.zip /data/local/tmp/
+adb shell "su -c 'ksud module install /data/local/tmp/TEESimulator-RS-v6.0.0-165-Release.zip'"
+adb reboot
+```
+
+After reboot, edit the relay config:
+```bash
+adb shell "su -c 'vi /data/adb/modules/tricky_store/omega-relay.conf'"
+```
+
 ```ini
-url = wss://relay.example.com:8443/
+url = ws://your-vps-ip:8443/
 psk = your-secret-key
 device_id = device-a-1
 ```
 
-在设备 A（BL 解锁，KSU/Magisk/APatch）上刷入模块 ZIP，编辑配置文件。
+重启后编辑中继配置文件，填入你的 VPS 地址、PSK 和设备 ID。
 
 ### 4. Verify / 验证
 
-Use [Key Attestation](https://github.com/nicholaschum/KeyAttestation) app:
-- Should show "Google Hardware Attestation Root Certificate"
-- Chain length: 6
-- End-to-end latency: 200-500ms
+Use [Key Attestation](https://github.com/nicholaschum/KeyAttestation) app on Device A:
+- Should show "Google Hardware Attestation Root Certificate" / 应显示"Google 硬件认证根证书"
+- Chain length: 6 / 链长度：6
+- End-to-end latency: 200-500ms / 端到端延迟：200-500ms
+
+Check relay logs on Device A:
+```bash
+adb logcat -s TEESimulator:V | grep -i relay
+```
 
 ---
 
