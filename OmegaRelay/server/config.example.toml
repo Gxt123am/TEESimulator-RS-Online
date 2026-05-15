@@ -1,0 +1,39 @@
+# OmegaRelay server configuration.
+# Copy to config.toml and edit before running.
+
+# Address to bind to. Use 0.0.0.0:8443 for public deployment.
+bind_addr = "0.0.0.0:8443"
+
+# Pre-shared key for client authentication. MUST be at least 16 chars and
+# strong / random. Generate with e.g. `openssl rand -hex 32`.
+psk = "REPLACE-ME-with-a-long-random-string-at-least-16-chars"
+
+[tls]
+enabled = true
+cert_path = "certs/server.crt"
+key_path = "certs/server.key"
+# If true and the cert/key files do not exist, generate a self-signed cert
+# at startup. Useful for development or LAN-only deployments.
+auto_generate_self_signed = true
+self_signed_sans = ["localhost", "127.0.0.1"]
+
+[limits]
+max_task_timeout_ms = 10000
+default_task_timeout_ms = 3000
+max_in_flight_tasks_per_consumer = 16
+idle_timeout_secs = 90
+
+# Whitelist of authorized devices.
+# - Only listed device_ids may connect.
+# - `role` must match the role claimed in the Hello message.
+# - `paired_with`: if set on a consumer, the server prefers that provider
+#   when dispatching tasks (failover to any provider if it is offline).
+
+[devices.device-a-1]
+role = "consumer"
+paired_with = "device-b-1"
+note = "Main phone (BL unlocked, KSU)"
+
+[devices.device-b-1]
+role = "provider"
+note = "Backup phone (BL locked, KSU next)"

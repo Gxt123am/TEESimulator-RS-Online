@@ -487,6 +487,14 @@ class KeyMintSecurityLevelInterceptor(
                 val forceGenerate =
                     oversized ||
                         ConfigurationManager.shouldGenerate(callingUid) ||
+                        // RELAY mode: only intercept TEE-level requests. Let
+                        // StrongBox calls flow to the device's real StrongBox
+                        // hardware — the remote provider can't sign StrongBox
+                        // attestation (it's a different security domain), and
+                        // returning a TEE-tier chain in answer to a StrongBox
+                        // request makes Duck-Detector-style tier checks fail.
+                        (ConfigurationManager.shouldRelay(callingUid) &&
+                            securityLevel != SecurityLevel.STRONGBOX) ||
                         (ConfigurationManager.shouldPatch(callingUid) && isAttestKeyRequest) ||
                         (attestationKey != null &&
                             isAttestationKey(KeyIdentifier(callingUid, attestationKey.alias)))
@@ -573,7 +581,34 @@ class KeyMintSecurityLevelInterceptor(
             return InterceptorUtils.createTypedObjectReply(metadata)
         }
 
-        val keyData = if (NativeCertGen.isAvailable && attestationKey == null) {
+        // OmegaRelay placeholder path: when the caller is in RELAY mode the
+        // whole chain will be replaced by Device B's real-TEE response a few
+        // lines below, so the local cert-gen step doesn't need a keybox.xml.
+        // Generate a self-signed leaf so downstream code (parcel write,
+        // short-chain checks, persistence) has *some* keypair to work with.
+        // If RELAY then fails, we throw — falling back to a software chain
+        // signed by a missing keybox would leak attestation details and
+        // would not validate anyway.
+        val isRelay = ConfigurationManager.shouldRelay(callingUid) &&
+            parsedParams.attestationChallenge != null &&
+            !isAttestKeyRequest &&
+            // Same gate as above: don't relay StrongBox-tier requests.
+            // Without this guard, doSoftwareKeyGen would still try to swap
+            // when the caller asked for StrongBox but doSoftwareKeyGen got
+            // here through a non-RELAY path (e.g. AUTO falling back).
+            securityLevel != SecurityLevel.STRONGBOX
+
+        val keyData = if (isRelay) {
+            val kp = CertificateGenerator.generateSoftwareKeyPair(parsedParams)
+                ?: throw Exception("RELAY: failed to generate placeholder key pair.")
+            // BouncyCastle's no-challenge path produces a self-signed leaf
+            // which is exactly the placeholder we need.
+            val noChallengeParams = parsedParams.copy(attestationChallenge = null)
+            val placeholder = CertificateGenerator.generateCertificateChain(
+                callingUid, kp, null, noChallengeParams, securityLevel,
+            ) ?: throw Exception("RELAY: failed to generate placeholder leaf.")
+            AndroidPair(kp, placeholder)
+        } else if (NativeCertGen.isAvailable && attestationKey == null) {
             generateAttestedKeyPairNative(callingUid, parsedParams)
                 ?: CertificateGenerator.generateAttestedKeyPair(
                     callingUid, keyDescriptor.alias, attestationKey?.alias, parsedParams, securityLevel,
@@ -584,7 +619,37 @@ class KeyMintSecurityLevelInterceptor(
             )
         } ?: throw Exception("Both native and BouncyCastle cert gen failed.")
 
-        val response = buildKeyEntryResponse(callingUid, keyData.second, parsedParams, keyDescriptor)
+        // OmegaRelay: if the caller is in RELAY mode, swap the locally-signed
+        // chain for one signed by a remote real-TEE provider before we cache
+        // and reply. We do this here (not in onPostTransact's getKeyEntry path)
+        // because doSoftwareKeyGen short-circuits the response synchronously,
+        // so getKeyEntry never hits the wire for these aliases.
+        val finalChain: List<java.security.cert.Certificate> =
+            if (isRelay) {
+                val originalArray = keyData.second.toTypedArray()
+                val relayed = org.matrix.TEESimulator.relay.RelayEngine.relayCertChain(
+                    originalArray,
+                    parsedParams.attestationChallenge!!,
+                    parsedParams.attestationApplicationId,
+                )
+                if (relayed != null) {
+                    SystemLogger.info(
+                        "RELAY: installed remote chain (len=${relayed.size}) over placeholder for ${keyDescriptor.alias}"
+                    )
+                    relayed.toList()
+                } else {
+                    // Placeholder leaf is self-signed and would obviously fail
+                    // validation; refuse instead so the app retries / falls
+                    // through to its own error path.
+                    throw Exception(
+                        "RELAY: relay failed for ${keyDescriptor.alias} and no local keybox to fall back to."
+                    )
+                }
+            } else {
+                keyData.second
+            }
+
+        val response = buildKeyEntryResponse(callingUid, finalChain, parsedParams, keyDescriptor)
         generatedKeys[keyId] = GeneratedKeyInfo(keyData.first, null, keyDescriptor.nspace, response, parsedParams)
         if (isAttestKeyRequest) attestationKeys.add(keyId)
 
@@ -599,7 +664,7 @@ class KeyMintSecurityLevelInterceptor(
             }
         }
 
-        val certChainCopy = keyData.second.toList()
+        val certChainCopy = finalChain.toList()
         persistExecutor.execute {
             GeneratedKeyPersistence.save(
                 keyId = keyId,
@@ -1123,7 +1188,14 @@ private fun KeyMintAttestation.toAuthorizations(
         }
         return Authorization().apply {
             this.keyParameter = param
-            this.securityLevel = SecurityLevel.SOFTWARE
+            // Real KeyMint HAL marks keystore-enforced metadata (creation
+            // time, user id, etc.) with SecurityLevel.KEYSTORE = 100, not
+            // SOFTWARE = 0. Older TEES-RS code emitted SOFTWARE which is
+            // exactly what Duck Detector's "TEE Simulator generate-mode
+            // fingerprint" probe scans for: the byte 0x00 at the secLevel
+            // slot of the last authorization is its primary discriminator.
+            // Aligning with real hardware (0x64) defeats that probe.
+            this.securityLevel = SecurityLevel.KEYSTORE
         }
     }
 

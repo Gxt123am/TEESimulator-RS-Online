@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Network security config.
+
+  Production should use wss:// to a real domain with a TLS cert; cleartext is
+  rejected by default. We carve out cleartext exceptions for:
+    - 127.0.0.1 / localhost           : adb reverse local-loopback testing
+    - 10.0.2.2                        : Android emulator host
+    - The current dev VPS public IP   : remote bring-up before TLS is set up
+
+  Android NSC matches by exact host string (or `includeSubdomains` for DNS
+  subdomains), not by CIDR. If you need to test against a different LAN/VPS
+  IP, add it here and reinstall the APK.
+
+  Once you front the relay with a real wss:// domain (Phase 2.5), remove the
+  public-IP entry below entirely.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system"/>
+            <certificates src="user"/>
+        </trust-anchors>
+    </base-config>
+
+    <domain-config cleartextTrafficPermitted="true">
+        <!-- Loopback / emulator -->
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+
+        <!-- Current dev relay (REMOVE ONCE WSS IS DEPLOYED). -->
+        <domain includeSubdomains="false">178.22.26.156</domain>
+    </domain-config>
+</network-security-config>

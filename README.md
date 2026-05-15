@@ -1,139 +1,174 @@
-<p align="center">
-  <h1 align="center">TEESimulator-RS</h1>
-  <p align="center"><b>Full TEE Emulation for Rooted Android</b></p>
-  <p align="center">
-    <a href="https://github.com/Enginex0/TEESimulator-RS/actions/workflows/build.yml"><img src="https://github.com/Enginex0/TEESimulator-RS/actions/workflows/build.yml/badge.svg" alt="Build"></a>
-    <img src="https://img.shields.io/badge/Android-10%2B-green?logo=android" alt="Android 10+">
-    <a href="https://t.me/superpowers9"><img src="https://img.shields.io/badge/Telegram-community-blue?logo=telegram" alt="Telegram"></a>
-  </p>
-</p>
+# TEESimulator-RS-Online
+
+**Remote attestation relay for Android devices** — forward hardware key attestation from a BL-locked device (Provider) to a BL-unlocked device (Consumer) over WebSocket.
+
+基于 [TEESimulator-RS](https://github.com/Enginex0/TEESimulator-RS) 的远程证书链转发方案。将 BL 锁定设备（Provider）的真实硬件 attestation 通过 WebSocket 中继到 BL 解锁设备（Consumer），实现 6 段 Google 硬件认证链。
 
 ---
 
-> [!NOTE]
-> Fork of [JingMatrix/TEESimulator](https://github.com/JingMatrix/TEESimulator) with native Rust certificate generation, key persistence, and AOSP-compliant attestation behavior. For the upstream project, see the original repo.
-
-## What It Does
-
-TEESimulator intercepts Binder IPC at the `ioctl` level inside the `keystore2` process and generates entire certificate chains from scratch, signed by your keybox, with correct attestation extensions. Apps that verify hardware attestation see a legitimate device.
-
-This is not TrickyStore. TEESimulator replaces TrickyStore and its forks entirely. It shares the same config paths for drop-in compatibility, but the internals are different: native Rust cert generation, binder-level interception via `lsplt`, per-UID rate limiting, key persistence, and AOSP-spec attestation behavior.
-
-## Requirements
-
-> [!IMPORTANT]
-> A valid `keybox.xml` is required for hardware-level attestation. Without one, the module generates software-level certificates that won't pass strict hardware checks.
-
-1. Android 10+
-2. Root manager: KernelSU, Magisk, or APatch
-3. `keybox.xml` at `/data/adb/tricky_store/keybox.xml`
-
-## Quick Start
-
-1. Download the latest ZIP from [Releases](https://github.com/Enginex0/TEESimulator-RS/releases)
-2. Install via your root manager and reboot
-3. Place your keybox at `/data/adb/tricky_store/keybox.xml`
-4. Configure targets in `/data/adb/tricky_store/target.txt`
-5. Verify with Play Integrity or Key Attestation Demo
-
-## Architecture
-
-**Native Cert Generation** — `libcertgen.so` generates X.509 chains in Rust using `ring` and manual DER encoding. BouncyCastle fallback for unsupported curves (P-224, P-521, Curve25519).
-
-**Binder Interception** — PLT hook on `ioctl()` in `libc.so` via `lsplt` inside `keystore2`. Intercepts `generateKey`, `importKey`, and `getKeyEntry` transactions.
-
-**AOSP Compliance** — Self-signed certs for non-attested keys (matching `ta/src/keys.rs`), correct AuthorizationList tag ordering, version-guarded extension fields, `authorize_create` enforcement.
-
-**Key Persistence** — Generated keys survive reboots. File-backed with file-level locking.
-
-**Rate Limiting** — Per-UID hardware keygen cap (2/30s window, 2 concurrent). Overflow falls to software certs.
-
-## Configuration
-
-All config files live at `/data/adb/tricky_store/` and are hot-reloaded via `FileObserver`.
-
-### target.txt
-
-Controls which apps get intercepted and the simulation mode.
-
-| Suffix | Mode |
-|--------|------|
-| `!` | Force software key generation |
-| `?` | Force leaf certificate patching (real TEE key, patched cert) |
-| *(none)* | Automatic selection |
-
-Multi-keybox support via `[filename.xml]` headers:
+## Architecture / 架构
 
 ```
-com.google.android.gms!
-io.github.vvb2060.keyattestation?
-
-[aosp_keybox.xml]
-com.google.android.gsf
+┌─────────────────┐         WebSocket + PSK         ┌─────────────────┐
+│   Device A      │◄──────────────────────────────►│   Device B      │
+│   (Consumer)    │                                 │   (Provider)    │
+│   BL Unlocked   │         ┌───────────┐          │   BL Locked     │
+│   KSU + Module  │◄───────►│  VPS Relay │◄────────►│   Provider APK  │
+│                 │         │  (Rust)    │          │   Real TEE      │
+└─────────────────┘         └───────────┘          └─────────────────┘
 ```
 
-### security_patch.txt
+**EN**: Device A intercepts `generateKey` calls via binder hook. When attestation is needed, it sends the public key + challenge to Device B through the relay server. Device B uses its real TEE to sign the attestation, producing a valid 6-cert chain rooted at Google Hardware Attestation Root. The chain is returned to Device A and injected into the keystore response.
 
-Override patch levels reported in attestation certificates. Global defaults at top, per-package overrides with `[package.name]`.
+**中文**: 设备 A 通过 binder hook 拦截 `generateKey` 调用。需要 attestation 时，将公钥 + challenge 经中继服务器发送给设备 B。设备 B 使用真实 TEE 签发 attestation，产生以 Google 硬件认证根证书为根的 6 段有效证书链，返回给设备 A 注入 keystore 响应。
 
-| Key | Scope |
-|-----|-------|
-| `system` | OS patch level |
-| `vendor` | Vendor patch level |
-| `boot` | Boot/kernel patch level |
-| `all` | Sets all three |
+---
 
-Special values: `today`, `YYYY-MM-DD` templates, `no` (omit tag), `device_default`, `prop` (read from system property).
+## Components / 组件
 
-```
-system=YYYY-MM-05
-vendor=device_default
-boot=no
+| Directory | Description |
+|---|---|
+| `app/` | TEESimulator-RS with OmegaRelay Consumer integration (KSU/Magisk module) |
+| `OmegaRelay/server/` | Rust WebSocket relay server |
+| `OmegaRelay/android/` | Provider APK (runs on Device B) |
+| `OmegaRelay/protocol/` | Shared protocol library (Rust, msgpack) |
+| `OmegaRelay/vps/` | One-click VPS deployment script |
+| `OmegaRelay/module/provider/` | KSU module packaging for Provider |
 
-[com.google.android.gms]
-system=2025-10-01
-```
+---
 
-## Building from Source
+## Quick Start / 快速开始
 
-Prerequisites: JDK 21, Android SDK/NDK 27, Rust stable with `aarch64-linux-android` target, `cargo-ndk`.
+### 1. Deploy Relay Server / 部署中继服务器
 
 ```bash
-git clone --recursive https://github.com/Enginex0/TEESimulator-RS.git
-cd TEESimulator-RS
-./gradlew zipRelease zipDebug
+# On your VPS (Debian/Ubuntu/RHEL):
+sudo OMEGA_PSK="$(openssl rand -hex 32)" \
+     OMEGA_DOMAIN=relay.example.com \
+     bash OmegaRelay/vps/install.sh
 ```
 
-Output ZIPs in `out/`. Gradle invokes `cargo ndk` automatically to cross-compile `libcertgen.so`.
+Or without TLS (put behind nginx):
+```bash
+sudo OMEGA_PSK="your-secret-key" OMEGA_NO_TLS=1 bash OmegaRelay/vps/install.sh
+```
 
-Push to `main` or use **Actions > Build > Run workflow** to trigger CI.
+### 2. Setup Provider (Device B) / 配置 Provider（设备 B）
 
-## Compatibility
+Install the Provider APK on a **BL-locked** device. Configure:
+- URL: `wss://relay.example.com:8443/`
+- PSK: (same as server)
+- Device ID: `device-b-1`
 
-| Root Manager | Status |
-|---|---|
-| KernelSU | Tested (Action button + lifecycle scripts) |
-| Magisk | Supported |
-| APatch | Supported |
+在 **BL 锁定**的设备上安装 Provider APK，配置中继地址、PSK 和设备 ID。
 
-## Community
+### 3. Setup Consumer (Device A) / 配置 Consumer（设备 A）
 
-<p align="center">
-  <a href="https://t.me/superpowers9">
-    <img src="https://img.shields.io/badge/SuperPowers_Telegram-Join-blue?style=for-the-badge&logo=telegram" alt="Telegram">
-  </a>
-</p>
+Flash the module ZIP on Device A (BL unlocked, KSU/Magisk/APatch).
 
-## Credits
+Edit `/data/adb/modules/tricky_store/omega-relay.conf`:
+```ini
+url = wss://relay.example.com:8443/
+psk = your-secret-key
+device_id = device-a-1
+```
 
-- [JingMatrix](https://github.com/JingMatrix/TEESimulator) — original TEESimulator and interception architecture
-- [5ec1cff](https://github.com/5ec1cff/TrickyStore) — TrickyStore, the project that pioneered keystore interception
-- [LSPlt](https://github.com/LSPosed/LSPlt) — PLT hook library
-- [ring](https://github.com/briansmith/ring) — Rust cryptography library
-- [MhmRdd](https://github.com/MhmRdd) — AOSP compliance work via upstream [PR #157](https://github.com/JingMatrix/TEESimulator/pull/157)
-- [fatalcoder524](https://github.com/fatalcoder524) — contributor and collaborator
-- [huguangares](https://github.com/huguangares) — collaborator and tester
+在设备 A（BL 解锁，KSU/Magisk/APatch）上刷入模块 ZIP，编辑配置文件。
 
-## License
+### 4. Verify / 验证
 
-[GNU General Public License v3.0](LICENSE)
+Use [Key Attestation](https://github.com/nicholaschum/KeyAttestation) app:
+- Should show "Google Hardware Attestation Root Certificate"
+- Chain length: 6
+- End-to-end latency: 200-500ms
+
+---
+
+## Building / 构建
+
+### Prerequisites / 前置条件
+
+- Android SDK (API 36)
+- NDK 27.3+
+- Rust toolchain + `cargo-ndk`
+- JDK 21
+
+### Build Consumer Module / 构建 Consumer 模块
+
+```powershell
+# Windows (paths with non-ASCII need these env vars):
+$env:CARGO_TARGET_DIR = "C:\Temp\teesim-rust-target"
+.\gradlew.bat :app:zipRelease
+# Output: out/TEESimulator-RS-*.zip
+```
+
+### Build Relay Server / 构建中继服务器
+
+```bash
+cd OmegaRelay
+cargo build --release -p omega-server
+# Binary: target/release/omega-server
+```
+
+### Build Provider APK / 构建 Provider APK
+
+```bash
+cd OmegaRelay/android
+./gradlew :daemon-provider-app:assembleRelease
+```
+
+---
+
+## Protocol / 协议
+
+See [OmegaRelay/docs/protocol.md](OmegaRelay/docs/protocol.md) for the full protocol specification.
+
+协议详情见 [OmegaRelay/docs/protocol.md](OmegaRelay/docs/protocol.md)。
+
+---
+
+## Security Notes / 安全说明
+
+- All communication is authenticated via PSK (pre-shared key)
+- TLS is strongly recommended for production deployments
+- The relay server never sees private keys — it only forwards opaque attestation tasks
+- Provider device must remain BL-locked for valid attestation
+
+- 所有通信通过 PSK（预共享密钥）认证
+- 生产环境强烈建议启用 TLS
+- 中继服务器不接触私钥——仅转发不透明的 attestation 任务
+- Provider 设备必须保持 BL 锁定才能产生有效 attestation
+
+---
+
+## Limitations / 限制
+
+- **Cannot pass Play Integrity**: Google's backend cross-references device identity through side-channels (GMS login, device registration) that detect the mismatch between Device A's real identity and Device B's attestation. This is a structural limitation.
+- **Can pass**: vvb2060 KeyAttestation, Duck Detector (Tamper score ≤ 8), apps that only verify the X.509 chain locally.
+
+- **无法通过 Play Integrity**：Google 后端通过侧信道（GMS 登录、设备注册）交叉验证设备身份，能检测到设备 A 真实身份与设备 B attestation 的不匹配。这是架构性限制。
+- **可以通过**：vvb2060 KeyAttestation、Duck Detector（Tamper score ≤ 8）、仅本地验证 X.509 链的应用。
+
+---
+
+## Duck Detector Fix / Duck Detector 修复
+
+This fork includes a fix for the "TEE Simulator generate-mode fingerprint" detection:
+
+Changed `SecurityLevel.SOFTWARE` → `SecurityLevel.KEYSTORE` in `createSwAuth()` to match real hardware behavior. See [OMEGA_INTEGRATION.md](OMEGA_INTEGRATION.md) for details.
+
+本 fork 包含对 "TEE Simulator generate-mode fingerprint" 检测的修复：将 `createSwAuth()` 中的 `SecurityLevel.SOFTWARE` 改为 `SecurityLevel.KEYSTORE` 以匹配真实硬件行为。
+
+---
+
+## Credits / 致谢
+
+- [TEESimulator-RS](https://github.com/Enginex0/TEESimulator-RS) by JingMatrix & Enginex0
+- [LSPlt](https://github.com/LSPosed/LSPlt) for native hooking
+- Protocol inspired by [Ommega](https://github.com/nicholaschum/ommega)
+
+---
+
+## License / 许可证
+
+GPLv3. See [LICENSE](LICENSE).

@@ -1,7 +1,7 @@
 id=tricky_store
-name=TEESimulator-RS
+name=OmegaRelay Consumer
 version=${REPLACEMEVER}
 versionCode=${REPLACEMEVERCODE}
-author=JingMatrix, Enginex0
-description=Software simulation for Android hardware-backed key pairs with key attestation
-updateJson=https://raw.githubusercontent.com/Enginex0/TEESimulator-RS/main/module/update.json
+author=JingMatrix, Enginex0, Andrea-tb
+description=TEE simulation + remote attestation relay. Fork of TEESimulator-RS with an added RELAY engine that forwards attestation tasks to a remote Provider device through a self-hosted relay server. Configs at /data/adb/tricky_store/.
+updateJson=

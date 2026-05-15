@@ -69,6 +69,11 @@ dependencies {
     compileOnly(project(":stub"))
     compileOnly(libs.annotation)
     implementation(libs.bcpkix)
+
+    // OmegaRelay consumer side: msgpack codec + OkHttp WebSocket client.
+    // okio comes in transitively via okhttp.
+    implementation(libs.msgpack.core)
+    implementation(libs.okhttp)
 }
 
 // --- Rust native cert gen build task ---
@@ -164,6 +169,30 @@ androidComponents {
                         "REPLACEMEVERCODE" to gitCommitCount.toString(),
                         "REPLACEMEVER" to "$verName-$gitCommitCount",
                     )
+                }
+
+                // Strip CR bytes from all text files we ship. KSU/Magisk
+                // busybox sh trips over CRLF during customize.sh, and we
+                // want this to work whether the source tree uses LF or CRLF
+                // (Windows checkouts) and regardless of Gradle's expand()
+                // re-encoding. Run as a doLast so the destination files
+                // exist when we rewrite them.
+                val textExts = setOf("sh", "prop", "txt", "md", "rule", "json", "conf")
+                val explicitNames = setOf("daemon")
+                doLast {
+                    val destDir = tempModuleDir.get().asFile
+                    destDir.walkTopDown()
+                        .filter { it.isFile }
+                        .filter { f ->
+                            f.extension.lowercase() in textExts ||
+                                f.name in explicitNames ||
+                                f.name.endsWith(".example.conf")
+                        }
+                        .forEach { f ->
+                            val bytes = f.readBytes()
+                            if (13.toByte() !in bytes) return@forEach
+                            f.writeBytes(bytes.filter { it != 13.toByte() }.toByteArray())
+                        }
                 }
 
                 // The destination for all the above 'from' operations.

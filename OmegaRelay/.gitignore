@@ -1,0 +1,29 @@
+# Rust
+target/
+Cargo.lock
+
+# Server runtime data
+server/config.toml
+server/certs/
+server/data/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.dex
+*.apk
+*.so
+!docs/**/*.so
+
+# Local secrets
+*.pem
+*.key
+*.crt
+*.p12

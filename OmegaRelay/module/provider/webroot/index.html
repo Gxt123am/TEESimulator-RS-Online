@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+    <title>OmegaRelay Provider</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>OmegaRelay <small>Provider</small></h1>
+        <span class="status" id="status">…</span>
+    </header>
+
+    <main>
+        <section class="card">
+            <h2>Connection</h2>
+            <label>
+                <span>Server URL</span>
+                <input type="url" id="url" placeholder="wss://relay.example.com:8443/">
+            </label>
+            <label>
+                <span>Device ID</span>
+                <input type="text" id="device_id" placeholder="device-b-1">
+            </label>
+            <label>
+                <span>Pre-shared key</span>
+                <input type="password" id="psk" placeholder="at least 16 chars">
+            </label>
+            <label class="checkbox">
+                <input type="checkbox" id="tls_insecure">
+                <span>Skip TLS verification (dev only)</span>
+            </label>
+
+            <div class="actions">
+                <button id="save" class="primary">Save &amp; Restart</button>
+                <button id="reload">Reload</button>
+            </div>
+            <p class="hint" id="save_hint"></p>
+        </section>
+
+        <section class="card">
+            <h2>Status</h2>
+            <dl class="kv">
+                <dt>Daemon</dt><dd id="daemon_status">unknown</dd>
+                <dt>PID</dt><dd id="daemon_pid">—</dd>
+                <dt>KeyStore</dt><dd id="ks_status">—</dd>
+                <dt>Last seen connect</dt><dd id="last_connect">—</dd>
+            </dl>
+            <div class="actions">
+                <button id="refresh">Refresh</button>
+                <button id="restart">Restart daemon</button>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>Recent log</h2>
+            <pre id="log">(no log yet)</pre>
+            <div class="actions">
+                <button id="clear_log">Clear log</button>
+            </div>
+        </section>
+    </main>
+
+    <script src="ksu.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

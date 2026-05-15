@@ -14,6 +14,7 @@ import org.matrix.TEESimulator.interception.keystore.Keystore2Interceptor
 import org.matrix.TEESimulator.interception.keystore.KeystoreInterceptor
 import org.matrix.TEESimulator.logging.SystemLogger
 import org.matrix.TEESimulator.pki.NativeCertGen
+import org.matrix.TEESimulator.relay.RelayEngine
 import org.matrix.TEESimulator.util.AndroidDeviceUtils
 
 /**
@@ -54,6 +55,17 @@ object App {
             Security.addProvider(BouncyCastleProvider())
 
             NativeCertGen.initialize("/data/adb/modules/tricky_store/libcertgen.so")
+
+            // Try to bring up the OmegaRelay client. If no /data/adb/tricky_store/
+            // omega-relay.conf exists, this returns false and RELAY mode in
+            // target.txt becomes a no-op (the engine reports "not initialized"
+            // and falls back). This is intentional: a fresh install shouldn't
+            // require relay config.
+            if (RelayEngine.initialize()) {
+                SystemLogger.info("OmegaRelay engine initialized.")
+            } else {
+                SystemLogger.info("OmegaRelay engine not configured (no omega-relay.conf).")
+            }
 
             // This starts the message queue processing. It blocks here indefinitely
             // processing messages until Looper.myLooper().quit() is called.

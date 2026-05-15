@@ -21,6 +21,7 @@ import org.matrix.TEESimulator.logging.KeyMintParameterLogger
 import org.matrix.TEESimulator.logging.SystemLogger
 import org.matrix.TEESimulator.pki.CertificateGenerator
 import org.matrix.TEESimulator.pki.CertificateHelper
+import org.matrix.TEESimulator.relay.RelayEngine
 
 /**
  * Interceptor for the `IKeystoreService` on Android S (API 31) and newer.
@@ -306,7 +307,8 @@ object Keystore2Interceptor : AbstractKeystoreInterceptor() {
                 callingPid,
             )
 
-            if (!ConfigurationManager.shouldPatch(callingUid))
+            if (!ConfigurationManager.shouldPatch(callingUid) &&
+                !ConfigurationManager.shouldRelay(callingUid))
                 return TransactionResult.SkipTransaction
 
             runCatching {
@@ -411,6 +413,53 @@ object Keystore2Interceptor : AbstractKeystoreInterceptor() {
                             "[TX_ID: $txId] Skip patching short certificate chain of length ${originalChain?.size}."
                         )
                         return TransactionResult.SkipTransaction
+                    }
+
+                    // RELAY mode: forward the attestation request to the
+                    // OmegaRelay Provider. We try this *before* falling back
+                    // to local PATCH; if relay fails (server unreachable,
+                    // timeout, etc.) we degrade to PATCH gracefully.
+                    //
+                    // StrongBox guard: if the original chain is StrongBox-tier,
+                    // don't swap. The remote provider can't sign StrongBox
+                    // attestation (it's a different security domain), and
+                    // returning a TEE-tier chain in answer to a StrongBox
+                    // request makes verifiers' tier-consistency checks fail
+                    // (Duck Detector etc.). Let StrongBox flow through to
+                    // PATCH (or the device's real StrongBox if PATCH is not
+                    // configured for this uid).
+                    val keyTier = response.metadata.keySecurityLevel
+                    SystemLogger.info(
+                        "[TX_ID: $txId] post-getKeyEntry $keyId tier=$keyTier (STRONGBOX=${SecurityLevel.STRONGBOX}, TEE=${SecurityLevel.TRUSTED_ENVIRONMENT})"
+                    )
+                    if (ConfigurationManager.shouldRelay(callingUid) &&
+                        keyTier != SecurityLevel.STRONGBOX
+                    ) {
+                        val challenge = parsedParameters.attestationChallenge
+                        if (challenge != null) {
+                            val appId = parsedParameters.attestationApplicationId
+                            val relayed = RelayEngine.relayCertChain(originalChain, challenge, appId)
+                            if (relayed != null) {
+                                CertificateHelper.updateCertificateChain(response.metadata, relayed)
+                                    .getOrThrow()
+                                response.metadata.authorizations =
+                                    InterceptorUtils.patchAuthorizations(
+                                        response.metadata.authorizations,
+                                        callingUid,
+                                    )
+                                SystemLogger.info(
+                                    "[TX_ID: $txId] RELAY chain installed for $keyId (len=${relayed.size})"
+                                )
+                                return InterceptorUtils.createTypedObjectReply(response)
+                            }
+                            SystemLogger.warning(
+                                "[TX_ID: $txId] RELAY failed for $keyId, falling back to PATCH"
+                            )
+                        } else {
+                            SystemLogger.warning(
+                                "[TX_ID: $txId] RELAY: no challenge in request, falling back to PATCH"
+                            )
+                        }
                     }
 
                     val cachedChain = KeyMintSecurityLevelInterceptor.getPatchedChain(keyId)

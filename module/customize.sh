@@ -48,7 +48,7 @@ install_file() {
 
 # --- Installation ---
 ui_print "- Extracting module files"
-for file in customize.sh module.prop service.sh sepolicy.rule daemon action.sh uninstall.sh; do
+for file in customize.sh module.prop service.sh sepolicy.rule daemon action.sh uninstall.sh omega-relay.example.conf; do
   install_file "$file" "$MODPATH"
 done
 
@@ -90,6 +90,15 @@ fi
 if [ ! -f "$CONFIG_DIR/target.txt" ]; then
   ui_print "- Adding default target scope"
   install_file "target.txt" "$CONFIG_DIR"
+fi
+
+# Drop a relay config template into the config dir on first install
+# so the user can edit it in place. We never overwrite an existing
+# omega-relay.conf — that would clobber the operator's secrets.
+if [ ! -f "$CONFIG_DIR/omega-relay.conf" ] && [ ! -f "$CONFIG_DIR/omega-relay.example.conf" ]; then
+  ui_print "- Adding omega-relay.example.conf template"
+  install_file "omega-relay.example.conf" "$CONFIG_DIR"
+  ui_print "  (rename to omega-relay.conf and fill in url/psk/device_id)"
 fi
 
 rm -f "$CONFIG_DIR/tee_status.txt"

@@ -1,0 +1,17 @@
+[package]
+name = "omega-protocol"
+version.workspace = true
+edition.workspace = true
+description = "OmegaRelay wire protocol definitions"
+
+[dependencies]
+serde = { workspace = true }
+serde_bytes = { workspace = true }
+rmp-serde = { workspace = true }
+uuid = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+subtle = { workspace = true }
+thiserror = { workspace = true }
+hex = { workspace = true }
+

@@ -1,11 +1,28 @@
+# OmegaRelay Consumer — per-app routing
+#
+# Each line is one package name. An optional suffix selects the engine:
+#   <name>   no suffix → AUTO (currently == PATCH; will prefer RELAY in Phase 4)
+#   <name>!  force PATCH (local cert-chain rewrite, fast, offline-friendly)
+#   <name>@  force RELAY (forward attestation to a Provider via omega-server)
+#
+# RELAY requires /data/adb/tricky_store/omega-relay.conf to be filled in
+# (url + psk + device_id). When the relay client is offline or the conf
+# is missing, RELAY entries fall back to PATCH automatically.
+#
+# Hot-reload: this file is watched at runtime, no reboot needed after edits.
+
+# Strict apps: prefer real-TEE evidence, no software-keybox fallback.
+# Switch these to the @ suffix once your relay server is online.
 com.android.vending
 com.google.android.gms
-io.github.vvb2060.keyattestation
-io.github.vvb2060.mahoshojo
-icu.nullptr.nativetest
-com.reveny.nativecheck
-com.zhenxi.hunter
-io.github.qwq233.keyattestation
-com.android.nativetest
-io.liankong.riskdetector
-luna.safe.luna
+
+# Attestation testers: keep on PATCH so they exercise the local engine.
+io.github.vvb2060.keyattestation!
+io.github.vvb2060.mahoshojo!
+icu.nullptr.nativetest!
+com.reveny.nativecheck!
+com.zhenxi.hunter!
+io.github.qwq233.keyattestation!
+com.android.nativetest!
+io.liankong.riskdetector!
+luna.safe.luna!

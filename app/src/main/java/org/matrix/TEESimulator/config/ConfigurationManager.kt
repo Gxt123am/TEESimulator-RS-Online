@@ -26,6 +26,13 @@ object ConfigurationManager {
         PATCH,
         /** Generate a new certificate chain from scratch. */
         GENERATE,
+        /**
+         * Forward the attestation request to a remote OmegaRelay Provider over the
+         * relay server. The forged leaf certificate carries a real TEE-issued chain
+         * from the Provider device. Requires `omega-relay.conf` to be present in
+         * the config directory and the network to be reachable.
+         */
+        RELAY,
     }
 
     // --- Configuration Paths ---
@@ -91,9 +98,23 @@ object ConfigurationManager {
     /** Determines if a new certificate needs to be generated for a given UID. */
     fun shouldGenerate(uid: Int): Boolean = getPackageModeForUid(uid) == Mode.GENERATE
 
+    /**
+     * Determines if attestation for a given UID should be forwarded to the
+     * OmegaRelay Provider. True only when the package was tagged with `@` in
+     * target.txt (or when AUTO resolves to RELAY because TEE is broken on
+     * this device but Relay is configured and reachable).
+     */
+    fun shouldRelay(uid: Int): Boolean = getPackageModeForUid(uid) == Mode.RELAY
+
     fun shouldSkipUid(uid: Int): Boolean = getPackageModeForUid(uid) == null
 
     fun isAutoMode(uid: Int): Boolean = getPackageModeForUid(uid) == Mode.AUTO
+
+    /**
+     * Returns the resolved [Mode] for a UID, or null if the UID's package isn't
+     * in target.txt at all.
+     */
+    fun getResolvedModeForUid(uid: Int): Mode? = getPackageModeForUid(uid)
 
     private fun getPackageModeForUid(uid: Int): Mode? {
         val packages = getPackagesForUid(uid)
@@ -103,12 +124,27 @@ object ConfigurationManager {
             when (packageModes[pkg]) {
                 Mode.GENERATE -> return Mode.GENERATE
                 Mode.PATCH -> return Mode.PATCH
-                Mode.AUTO -> return if (DeviceAttestationService.isTeeFunctional) Mode.PATCH else Mode.GENERATE
+                Mode.RELAY -> return Mode.RELAY
+                Mode.AUTO -> return resolveAuto()
                 null -> continue
             }
         }
         return null
     }
+
+    /**
+     * Resolve AUTO to a concrete mode. Currently keeps the original TEES-RS
+     * behaviour:
+     *   - if TEE is functional → PATCH (cheapest, leaf-rewrite of real chain)
+     *   - else → GENERATE     (synthesize a chain from a local keybox)
+     *
+     * Future: when RelayClient is wired in, prefer RELAY over GENERATE if
+     * connected to an Omega Provider, since a real remote TEE chain beats a
+     * locally-synthesized one. Keep this as a single function so the policy
+     * lives in one place.
+     */
+    private fun resolveAuto(): Mode =
+        if (DeviceAttestationService.isTeeFunctional) Mode.PATCH else Mode.GENERATE
 
     /**
      * Retrieves the custom patch level configuration for a given UID. It first checks for a
@@ -163,6 +199,12 @@ object ConfigurationManager {
                     trimmedLine.endsWith("?") -> {
                         val pkg = trimmedLine.removeSuffix("?").trim()
                         newModes[pkg] = Mode.PATCH
+                        newKeyboxes[pkg] = currentKeybox
+                    }
+                    // Suffix '@' means force RELAY mode (OmegaRelay extension).
+                    trimmedLine.endsWith("@") -> {
+                        val pkg = trimmedLine.removeSuffix("@").trim()
+                        newModes[pkg] = Mode.RELAY
                         newKeyboxes[pkg] = currentKeybox
                     }
                     else -> {

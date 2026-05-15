@@ -1,0 +1,7 @@
+id=omega_provider
+name=OmegaRelay Provider
+version=v0.1.0
+versionCode=1
+author=Andrea
+description=Device B side of OmegaRelay. Listens for remote attestation tasks via WebSocket and serves them using the local hardware TEE / KeyStore.
+updateJson=

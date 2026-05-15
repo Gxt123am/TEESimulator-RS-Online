@@ -5,3 +5,18 @@ app/build
 build
 native-certgen/target
 app/src/main/jniLibs
+local.properties
+
+# OmegaRelay build artifacts and sensitive configs
+OmegaRelay/target/
+OmegaRelay/dist/
+OmegaRelay/android/.gradle/
+OmegaRelay/android/.idea/
+OmegaRelay/android/.kotlin/
+OmegaRelay/android/build/
+OmegaRelay/android/local.properties
+OmegaRelay/android/daemon-provider/provider.conf
+OmegaRelay/android/daemon-provider-app/release/
+OmegaRelay/server/config.toml
+OmegaRelay/**/*.pem
+OmegaRelay/tmp*.txt

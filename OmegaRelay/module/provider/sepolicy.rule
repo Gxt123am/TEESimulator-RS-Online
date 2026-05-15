@@ -1,0 +1,13 @@
+# SELinux rules for OmegaRelay Provider.
+#
+# We launch via app_process under root (magisk_daemon context), and need the
+# Android KeyStore + network access. Most of these are already allowed for the
+# magisk daemon context, but be explicit for clarity.
+
+# Allow our daemon (running as root, in magisk_daemon domain) to talk to keystore.
+allow magisk keystore_service service_manager_type find
+allow magisk keystore binder { call transfer }
+
+# Allow file operations under /data/adb/omega/.
+allow magisk adb_data_file dir { search read write add_name remove_name create rmdir setattr }
+allow magisk adb_data_file file { open read write create getattr setattr unlink lock append }

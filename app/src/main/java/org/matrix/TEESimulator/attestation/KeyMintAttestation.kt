@@ -32,6 +32,7 @@ data class KeyMintAttestation(
     val certificateNotBefore: Date?,
     val certificateNotAfter: Date?,
     val attestationChallenge: ByteArray?,
+    val attestationApplicationId: ByteArray? = null,
     val brand: ByteArray?,
     val device: ByteArray?,
     val product: ByteArray?,
@@ -106,6 +107,9 @@ data class KeyMintAttestation(
 
         // AOSP: [key_param(tag = ATTESTATION_CHALLENGE, field = Blob)]
         attestationChallenge = params.findBlob(Tag.ATTESTATION_CHALLENGE),
+
+        // AOSP: [key_param(tag = ATTESTATION_APPLICATION_ID, field = Blob)]
+        attestationApplicationId = params.findBlob(Tag.ATTESTATION_APPLICATION_ID),
 
         // AOSP: [key_param(tag = ATTESTATION_ID_*, field = Blob)]
         brand = params.findBlob(Tag.ATTESTATION_ID_BRAND),
